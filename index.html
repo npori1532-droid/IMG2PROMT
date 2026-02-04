@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IMG TO PROMT GANERETOR - by Tech Master</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        overflow-x: hidden;
+        background-color: #020617;
+      }
+      .perspective-2000 {
+        perspective: 2000px;
+      }
+      .preserve-3d {
+        transform-style: preserve-3d;
+      }
+      .card-3d {
+        transition: transform 0.6s cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.6s ease;
+      }
+      .card-3d:hover {
+        transform: rotateX(5deg) rotateY(-5deg) translateZ(30px);
+        box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 0.7);
+      }
+      .floating {
+        animation: floating 6s ease-in-out infinite;
+      }
+      @keyframes floating {
+        0%, 100% { transform: translateY(0px) rotate(0deg); }
+        50% { transform: translateY(-15px) rotate(1deg); }
+      }
+      .glow-blob {
+        position: fixed;
+        width: 800px;
+        height: 800px;
+        background: radial-gradient(circle, rgba(59, 130, 246, 0.1) 0%, rgba(147, 51, 234, 0.05) 50%, transparent 100%);
+        border-radius: 50%;
+        filter: blur(100px);
+        z-index: -1;
+        pointer-events: none;
+        animation: float-blob 25s infinite alternate;
+      }
+      @keyframes float-blob {
+        0% { transform: translate(-20%, -20%) scale(1); }
+        100% { transform: translate(40%, 40%) scale(1.3); }
+      }
+      .animate-gradient {
+        background-size: 200% 200%;
+        animation: gradient-move 5s ease infinite;
+      }
+      @keyframes gradient-move {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+      .tilt-in {
+        animation: tilt-in 0.8s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+      }
+      @keyframes tilt-in {
+        from { opacity: 0; transform: rotateX(-15deg) translateY(40px); }
+        to { opacity: 1; transform: rotateX(0) translateY(0); }
+      }
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 6px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: rgba(59, 130, 246, 0.5);
+        border-radius: 10px;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.39.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-slate-50 dark:bg-[#020617] text-slate-900 dark:text-slate-100 transition-colors duration-500">
+    <div class="glow-blob top-[-20%] left-[-20%]"></div>
+    <div class="glow-blob bottom-[-20%] right-[-20%] !bg-purple-900/10"></div>
+    <div id="root"></div>
+  </body>
+</html>
