@@ -13,12 +13,13 @@ const App: React.FC = () => {
     return (saved as Theme) || 'dark';
   });
   
-  // Track if we have a valid key environment
-  const [hasKey, setHasKey] = useState<boolean>(false);
+  // Initialize from existing key if present
+  const [hasKey, setHasKey] = useState<boolean>(!!process.env.API_KEY);
   const [imageUrl, setImageUrl] = useState<string>('');
   const [base64Data, setBase64Data] = useState<string | undefined>();
   const [mimeType, setMimeType] = useState<string | undefined>();
   const [generatedPrompt, setGeneratedPrompt] = useState<string>('');
+  const [activeEngine, setActiveEngine] = useState<'Aryan' | 'Gemini' | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<PromptHistoryItem[]>(() => {
@@ -26,25 +27,22 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Check for API Key presence continuously until found or selected
+  // Verify platform key state
   useEffect(() => {
     const checkKey = async () => {
-      // Direct check of injected variable
-      if (process.env.API_KEY && process.env.API_KEY.length > 5) {
+      if (process.env.API_KEY) {
         setHasKey(true);
         return;
       }
-
-      // Fallback to platform helper
       if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
         const selected = await window.aistudio.hasSelectedApiKey();
         if (selected) setHasKey(true);
       }
     };
-
     checkKey();
-    const interval = setInterval(checkKey, 2000);
-    return () => clearInterval(interval);
+    // Interval to catch platform injection
+    const int = setInterval(checkKey, 3000);
+    return () => clearInterval(int);
   }, []);
 
   useEffect(() => {
@@ -61,7 +59,7 @@ const App: React.FC = () => {
   const handleSelectKey = async () => {
     if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
       await window.aistudio.openSelectKey();
-      // Proceed assuming success per platform standard
+      // Assume success per platform standard
       setHasKey(true);
     }
   };
@@ -69,37 +67,40 @@ const App: React.FC = () => {
   const handleGenerate = async (url: string) => {
     if (!url && !base64Data) return;
     
-    // Safety check for the specific SDK error reported
-    if (!process.env.API_KEY || process.env.API_KEY === "") {
-       // If it's a URL, we can still try the Aryan API even without a Gemini Key
-       if (!url.startsWith('http') || url.startsWith('data:')) {
-         setError("SYSTEM FAULT: Local analysis requires an active API Key.");
-         setHasKey(false);
-         return;
-       }
+    // Safety check for Gemini specific calls
+    const isUrlCall = url.startsWith('http') && !url.startsWith('data:');
+    if (!process.env.API_KEY && !isUrlCall) {
+       setError("AUTHENTICATION FAILED: Vision analysis requires an active project key.");
+       setHasKey(false);
+       return;
     }
 
     setIsLoading(true);
     setError(null);
     setGeneratedPrompt('');
+    setActiveEngine(null);
     
     try {
-      const result = await fetchPromptFromImage(url, base64Data, mimeType);
-      setGeneratedPrompt(result);
+      const { prompt, engine } = await fetchPromptFromImage(url, base64Data, mimeType);
+      
+      setGeneratedPrompt(prompt);
+      setActiveEngine(engine);
       
       const newHistoryItem: PromptHistoryItem = {
         id: Date.now().toString(),
         timestamp: Date.now(),
         imageUrl: url.startsWith('data:') ? 'Local Asset' : url,
-        prompt: result
+        prompt: prompt
       };
       setHistory(prev => [newHistoryItem, ...prev]);
     } catch (err: any) {
-      console.error("Analysis Failure:", err);
+      console.error("Critical Fault:", err);
       const msg = err.message || "";
-      if (msg.includes("API Key") || msg.includes("ENGINE_OFFLINE")) {
+      
+      // Handle the "entity not found" error to reset the key state as per instructions
+      if (msg.includes("Requested entity was not found") || msg.includes("API key") || msg.includes("AUTH_REQUIRED")) {
         setHasKey(false);
-        setError("AUTHENTICATION FAILED: Please connect your API Key.");
+        setError("API Session Expired: Please re-initialize the connection.");
       } else {
         setError(msg || "The engine encountered an unexpected interruption.");
       }
@@ -114,6 +115,7 @@ const App: React.FC = () => {
     setMimeType(undefined);
     setGeneratedPrompt('');
     setError(null);
+    setActiveEngine(null);
   };
 
   const handleImageDataChange = (url: string, base64?: string, type?: string) => {
@@ -123,23 +125,27 @@ const App: React.FC = () => {
     setError(null);
   };
 
-  if (!hasKey && (!process.env.API_KEY)) {
+  // Setup screen for users without an API key
+  if (!hasKey && !process.env.API_KEY) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#020617] p-6">
-        <div className="max-w-md w-full bg-slate-900 border border-white/10 p-12 rounded-[3.5rem] shadow-2xl text-center space-y-10 animate-in fade-in zoom-in duration-700">
-          <div className="w-24 h-24 bg-gradient-to-tr from-blue-600 to-indigo-700 rounded-[2rem] mx-auto flex items-center justify-center text-white text-4xl font-black shadow-2xl shadow-blue-500/20 rotate-3">TM</div>
+      <div className="min-h-screen flex items-center justify-center bg-[#020617] p-6 relative overflow-hidden">
+        <div className="glow-blob top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-30"></div>
+        <div className="max-w-md w-full bg-slate-900/80 backdrop-blur-3xl border border-white/10 p-12 rounded-[3.5rem] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)] text-center space-y-10 animate-in fade-in zoom-in duration-700 relative z-10">
+          <div className="w-24 h-24 bg-gradient-to-tr from-blue-600 to-indigo-700 rounded-[2rem] mx-auto flex items-center justify-center text-white text-4xl font-black shadow-[0_20px_40px_rgba(37,99,235,0.3)] rotate-3">TM</div>
           <div className="space-y-4">
             <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Initialize Engine</h2>
-            <p className="text-slate-400 font-medium">To activate the <b>Tech Master Vision Engine</b>, please connect your API Project.</p>
+            <p className="text-slate-400 font-medium leading-relaxed">
+              To activate the <span className="text-blue-400 font-bold">Tech Master Neural Engine</span>, please connect a valid API Project.
+            </p>
           </div>
           <button 
             onClick={handleSelectKey}
             className="w-full py-6 rounded-[1.5rem] bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-widest transition-all shadow-xl shadow-blue-600/20 active:scale-95"
           >
-            Connect API Key
+            Connect API Project
           </button>
           <p className="text-[10px] text-slate-500 uppercase tracking-[0.3em] font-bold">
-            <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="hover:text-blue-400">Billing Required &rarr;</a>
+            <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="hover:text-blue-400">Project Documentation &rarr;</a>
           </p>
         </div>
       </div>
@@ -147,17 +153,17 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col transition-all duration-700 perspective-2000">
+    <div className="min-h-screen flex flex-col transition-all duration-700 perspective-2000 bg-[#020617]">
       <Navbar theme={theme} onToggleTheme={toggleTheme} />
       
       <main className="flex-grow container mx-auto px-4 py-12 max-w-6xl z-10">
         <div className="flex justify-center mb-12">
           <div className="group relative floating">
             <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-3xl blur opacity-20 group-hover:opacity-60 transition duration-500"></div>
-            <div className="relative px-8 py-4 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-white/10 rounded-[2rem] flex items-center gap-6 shadow-xl backdrop-blur-xl">
+            <div className="relative px-8 py-4 bg-slate-900/90 border border-white/10 rounded-[2rem] flex items-center gap-6 shadow-xl backdrop-blur-xl">
               <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-black text-xl shadow-xl">TM</div>
               <div className="flex flex-col">
-                <span className="text-slate-800 dark:text-white font-black text-base uppercase tracking-widest">Tech Master Systems</span>
+                <span className="text-white font-black text-base uppercase tracking-widest">Tech Master Systems</span>
                 <span className="text-[10px] font-bold text-blue-500 uppercase tracking-[0.3em]">Architect & Lead Engineer</span>
               </div>
             </div>
@@ -166,7 +172,7 @@ const App: React.FC = () => {
 
         <header className="text-center mb-24 relative tilt-in">
           <h1 className="text-6xl md:text-[9.5rem] font-black mb-8 tracking-tighter leading-[0.85] perspective-1000">
-            <span className="inline-block hover:scale-105 transition-transform duration-500 bg-clip-text text-transparent bg-gradient-to-br from-slate-900 via-slate-600 to-slate-900 dark:from-white dark:via-blue-400 dark:to-purple-600 animate-gradient">
+            <span className="inline-block hover:scale-105 transition-transform duration-500 bg-clip-text text-transparent bg-gradient-to-br from-white via-blue-400 to-purple-600 animate-gradient">
               IMG TO PROMT
             </span>
             <br />
@@ -174,9 +180,9 @@ const App: React.FC = () => {
               GANERETOR
             </span>
           </h1>
-          <p className="text-slate-500 dark:text-slate-400 max-w-2xl mx-auto text-2xl font-bold mt-10 tracking-tight leading-relaxed">
-            Leading-edge visual semantic analysis. <br/>
-            Powered by <span className="text-blue-500">Tech Master Neural Engine</span>.
+          <p className="text-slate-400 max-w-2xl mx-auto text-2xl font-bold mt-10 tracking-tight leading-relaxed">
+            High-speed visual semantic analysis. <br/>
+            Engine: {activeEngine ? <span className="text-blue-500">{activeEngine} AI</span> : <span className="text-slate-600 italic">Standby...</span>}
           </p>
         </header>
 
@@ -211,6 +217,7 @@ const App: React.FC = () => {
                   setImageUrl(item.imageUrl);
                   setGeneratedPrompt(item.prompt);
                   setError(null);
+                  setActiveEngine('Gemini');
                 }}
                 onClear={() => setHistory([])}
               />
