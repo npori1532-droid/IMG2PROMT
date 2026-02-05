@@ -13,10 +13,10 @@ const App: React.FC = () => {
     return (saved as Theme) || 'dark';
   });
   
-  // Track if we are in a managed environment that supports API key selection
+  // Detection logic for managed API key environments
   const isManagedEnv = typeof window !== 'undefined' && !!(window.aistudio && window.aistudio.openSelectKey);
   
-  // Initial state for hasKey
+  // Check if we have an API key available
   const [hasKey, setHasKey] = useState<boolean>(!!process.env.API_KEY);
   const [imageUrl, setImageUrl] = useState<string>('');
   const [base64Data, setBase64Data] = useState<string | undefined>();
@@ -30,7 +30,7 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Verify platform key state
+  // Verify key state from the platform bridge if applicable
   useEffect(() => {
     const checkKey = async () => {
       if (process.env.API_KEY) {
@@ -38,13 +38,15 @@ const App: React.FC = () => {
         return;
       }
       if (isManagedEnv) {
-        const selected = await window.aistudio.hasSelectedApiKey();
-        if (selected) setHasKey(true);
+        try {
+          const selected = await window.aistudio.hasSelectedApiKey();
+          if (selected) setHasKey(true);
+        } catch (e) {
+          console.warn("Bridge state check failed.");
+        }
       }
     };
     checkKey();
-    
-    // Periodically check for key injection if we don't have one yet
     const int = setInterval(checkKey, 3000);
     return () => clearInterval(int);
   }, [isManagedEnv]);
@@ -63,7 +65,6 @@ const App: React.FC = () => {
   const handleSelectKey = async () => {
     if (isManagedEnv) {
       await window.aistudio.openSelectKey();
-      // Assume success per platform standard to avoid race conditions
       setHasKey(true);
     }
   };
@@ -93,13 +94,12 @@ const App: React.FC = () => {
       console.error("Critical Fault:", err);
       const msg = err.message || "";
       
-      if (msg.includes("Requested entity was not found") || msg.includes("API key") || msg.includes("AUTH_REQUIRED")) {
-        // Only reset hasKey if we are in a managed env where selection is the solution
+      if (msg.includes("AUTH_REQUIRED") || msg.includes("API key") || msg.includes("entity was not found")) {
         if (isManagedEnv) {
           setHasKey(false);
-          setError("API Session Expired: Please re-initialize the connection.");
+          setError("API Session Offline: Please click the 'Connect Project' button below to re-initialize.");
         } else {
-          setError("GEMINI AUTH ERROR: Ensure process.env.API_KEY is set in your host environment.");
+          setError("API KEY MISSING: To analyze local files, you must set 'process.env.API_KEY' in your Vercel/Host settings. Remote URLs may also fail if blocked by secure browser policies.");
         }
       } else {
         setError(msg || "The engine encountered an unexpected interruption.");
@@ -125,7 +125,8 @@ const App: React.FC = () => {
     setError(null);
   };
 
-  // Only block the UI if we are in a managed environment and truly missing a key
+  // Only block the UI if we are DEFINITELY in a managed env and truly missing a key.
+  // This prevents the Vercel host from being locked out.
   const showSetupScreen = isManagedEnv && !hasKey && !process.env.API_KEY;
 
   if (showSetupScreen) {
@@ -137,17 +138,17 @@ const App: React.FC = () => {
           <div className="space-y-4">
             <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Initialize Engine</h2>
             <p className="text-slate-400 font-medium leading-relaxed">
-              To activate the <span className="text-blue-400 font-bold">Tech Master Neural Engine</span>, please connect a valid API Project.
+              Connect your <span className="text-blue-400 font-bold">API Project</span> to unlock the Tech Master Neural Engine.
             </p>
           </div>
           <button 
             onClick={handleSelectKey}
             className="w-full py-6 rounded-[1.5rem] bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-widest transition-all shadow-xl shadow-blue-600/20 active:scale-95"
           >
-            Connect API Project
+            Connect Project
           </button>
           <p className="text-[10px] text-slate-500 uppercase tracking-[0.3em] font-bold">
-            <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="hover:text-blue-400">Project Documentation &rarr;</a>
+            <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="hover:text-blue-400">Documentation &rarr;</a>
           </p>
         </div>
       </div>
@@ -184,7 +185,7 @@ const App: React.FC = () => {
           </h1>
           <p className="text-slate-400 max-w-2xl mx-auto text-2xl font-bold mt-10 tracking-tight leading-relaxed">
             High-speed visual semantic analysis. <br/>
-            Engine: {activeEngine ? <span className="text-blue-500">{activeEngine} AI</span> : <span className="text-slate-600 italic">Standby...</span>}
+            Engine: {activeEngine ? <span className="text-blue-500">{activeEngine} Core</span> : <span className="text-slate-600 italic">Standby...</span>}
           </p>
         </header>
 
@@ -209,6 +210,18 @@ const App: React.FC = () => {
                 />
               </div>
             )}
+            
+            {isManagedEnv && !hasKey && (
+              <div className="p-8 rounded-[2rem] bg-blue-600/10 border border-blue-500/20 text-center space-y-4">
+                 <p className="text-sm font-bold text-blue-400 uppercase tracking-widest">Neural Engine Offline</p>
+                 <button 
+                   onClick={handleSelectKey}
+                   className="px-8 py-3 rounded-xl bg-blue-600 text-white font-black text-xs uppercase tracking-widest hover:bg-blue-500 transition-all shadow-xl shadow-blue-600/20"
+                 >
+                   Connect Project
+                 </button>
+              </div>
+            )}
           </div>
 
           <aside className="lg:col-span-4 h-full">
@@ -219,7 +232,6 @@ const App: React.FC = () => {
                   setImageUrl(item.imageUrl);
                   setGeneratedPrompt(item.prompt);
                   setError(null);
-                  setActiveEngine('Gemini');
                 }}
                 onClear={() => setHistory([])}
               />
