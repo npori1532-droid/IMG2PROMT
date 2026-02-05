@@ -13,8 +13,8 @@ const App: React.FC = () => {
     return (saved as Theme) || 'dark';
   });
   
-  // Initialize based on whether the environment already has the key injected
-  const [hasKey, setHasKey] = useState<boolean>(!!process.env.API_KEY);
+  // Track if we have a valid key environment
+  const [hasKey, setHasKey] = useState<boolean>(false);
   const [imageUrl, setImageUrl] = useState<string>('');
   const [base64Data, setBase64Data] = useState<string | undefined>();
   const [mimeType, setMimeType] = useState<string | undefined>();
@@ -26,23 +26,25 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Verify key selection status from the host platform
+  // Check for API Key presence continuously until found or selected
   useEffect(() => {
     const checkKey = async () => {
-      try {
-        if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
-          const selected = await window.aistudio.hasSelectedApiKey();
-          if (selected) {
-            setHasKey(true);
-          } else if (!process.env.API_KEY) {
-            setHasKey(false);
-          }
-        }
-      } catch (e) {
-        console.error("Auth Check Failure:", e);
+      // Direct check of injected variable
+      if (process.env.API_KEY && process.env.API_KEY.length > 5) {
+        setHasKey(true);
+        return;
+      }
+
+      // Fallback to platform helper
+      if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+        const selected = await window.aistudio.hasSelectedApiKey();
+        if (selected) setHasKey(true);
       }
     };
+
     checkKey();
+    const interval = setInterval(checkKey, 2000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -57,25 +59,24 @@ const App: React.FC = () => {
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
   const handleSelectKey = async () => {
-    try {
-      if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
-        await window.aistudio.openSelectKey();
-        // Mandatory instruction: Assume success immediately after triggering
-        setHasKey(true);
-      }
-    } catch (e) {
-      console.error("Key Selection Error:", e);
+    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+      await window.aistudio.openSelectKey();
+      // Proceed assuming success per platform standard
+      setHasKey(true);
     }
   };
 
   const handleGenerate = async (url: string) => {
     if (!url && !base64Data) return;
     
-    // Safety check: Don't proceed if key is definitely missing
-    if (!process.env.API_KEY && hasKey) {
-       setError("System context missing. Please re-connect your API project.");
-       setHasKey(false);
-       return;
+    // Safety check for the specific SDK error reported
+    if (!process.env.API_KEY || process.env.API_KEY === "") {
+       // If it's a URL, we can still try the Aryan API even without a Gemini Key
+       if (!url.startsWith('http') || url.startsWith('data:')) {
+         setError("SYSTEM FAULT: Local analysis requires an active API Key.");
+         setHasKey(false);
+         return;
+       }
     }
 
     setIsLoading(true);
@@ -84,9 +85,6 @@ const App: React.FC = () => {
     
     try {
       const result = await fetchPromptFromImage(url, base64Data, mimeType);
-      
-      if (!result) throw new Error("Visual signature analysis timed out.");
-      
       setGeneratedPrompt(result);
       
       const newHistoryItem: PromptHistoryItem = {
@@ -97,14 +95,13 @@ const App: React.FC = () => {
       };
       setHistory(prev => [newHistoryItem, ...prev]);
     } catch (err: any) {
-      console.error("Generation Fault:", err);
-      
-      const errorMessage = err.message || "";
-      if (errorMessage.includes("API key") || errorMessage.includes("entity was not found")) {
+      console.error("Analysis Failure:", err);
+      const msg = err.message || "";
+      if (msg.includes("API Key") || msg.includes("ENGINE_OFFLINE")) {
         setHasKey(false);
-        setError("API Key verification failed. Please select a valid paid project.");
+        setError("AUTHENTICATION FAILED: Please connect your API Key.");
       } else {
-        setError(errorMessage || "The engine encountered an unexpected interruption. Please try again.");
+        setError(msg || "The engine encountered an unexpected interruption.");
       }
     } finally {
       setIsLoading(false);
@@ -126,26 +123,23 @@ const App: React.FC = () => {
     setError(null);
   };
 
-  if (!hasKey) {
+  if (!hasKey && (!process.env.API_KEY)) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#020617] p-6 relative overflow-hidden">
-        <div className="glow-blob top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-20"></div>
-        <div className="max-w-md w-full bg-slate-900/80 backdrop-blur-3xl border border-white/10 p-12 rounded-[3.5rem] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)] text-center space-y-10 animate-in fade-in zoom-in duration-700 relative z-10">
-          <div className="w-24 h-24 bg-gradient-to-tr from-blue-600 to-indigo-700 rounded-[2rem] mx-auto flex items-center justify-center text-white text-4xl font-black shadow-[0_20px_40px_rgba(37,99,235,0.3)] rotate-3">TM</div>
+      <div className="min-h-screen flex items-center justify-center bg-[#020617] p-6">
+        <div className="max-w-md w-full bg-slate-900 border border-white/10 p-12 rounded-[3.5rem] shadow-2xl text-center space-y-10 animate-in fade-in zoom-in duration-700">
+          <div className="w-24 h-24 bg-gradient-to-tr from-blue-600 to-indigo-700 rounded-[2rem] mx-auto flex items-center justify-center text-white text-4xl font-black shadow-2xl shadow-blue-500/20 rotate-3">TM</div>
           <div className="space-y-4">
             <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Initialize Engine</h2>
-            <p className="text-slate-400 font-medium leading-relaxed">
-              Connect a <span className="text-blue-400 font-bold">Paid GCP Project</span> to enable the Tech Master visual intelligence engine.
-            </p>
+            <p className="text-slate-400 font-medium">To activate the <b>Tech Master Vision Engine</b>, please connect your API Project.</p>
           </div>
           <button 
             onClick={handleSelectKey}
             className="w-full py-6 rounded-[1.5rem] bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-widest transition-all shadow-xl shadow-blue-600/20 active:scale-95"
           >
-            Connect API Project
+            Connect API Key
           </button>
           <p className="text-[10px] text-slate-500 uppercase tracking-[0.3em] font-bold">
-            <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="hover:text-blue-400 transition-colors">Billing Documentation &rarr;</a>
+            <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="hover:text-blue-400">Billing Required &rarr;</a>
           </p>
         </div>
       </div>
@@ -181,7 +175,7 @@ const App: React.FC = () => {
             </span>
           </h1>
           <p className="text-slate-500 dark:text-slate-400 max-w-2xl mx-auto text-2xl font-bold mt-10 tracking-tight leading-relaxed">
-            Unlocking latent visual semantic features. <br/>
+            Leading-edge visual semantic analysis. <br/>
             Powered by <span className="text-blue-500">Tech Master Neural Engine</span>.
           </p>
         </header>
