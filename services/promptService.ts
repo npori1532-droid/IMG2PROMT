@@ -10,28 +10,29 @@ export const fetchPromptFromImage = async (
   mimeType?: string
 ): Promise<{ prompt: string, engine: 'Aryan' | 'Gemini' }> => {
   
-  // Strategy 1: Aryan API (From snippet)
-  // Only applicable for public remote URLs. This is prioritized to avoid API key requirements for web links.
+  // Strategy 1: Aryan API
+  // Prioritized for public URLs to bypass local Gemini API key requirements.
   if (imageUrl && imageUrl.startsWith('http') && !imageUrl.startsWith('data:')) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-      const nix = "http://65.109.80.126:20409/aryan/promptv2";
-      const response = await fetch(`${nix}?imageUrl=${encodeURIComponent(imageUrl)}`, {
+      // We use the exact endpoint provided by the user
+      const endpoint = "http://65.109.80.126:20409/aryan/promptv2";
+      const response = await fetch(`${endpoint}?imageUrl=${encodeURIComponent(imageUrl)}`, {
         signal: controller.signal
       });
       
       clearTimeout(timeoutId);
-      const data = await response.json();
       
-      if (data && (data.prompt || data.success)) {
-        return { prompt: data.prompt || "No prompt returned by Aryan Engine.", engine: 'Aryan' };
+      if (response.ok) {
+        const data = await response.json();
+        if (data && (data.prompt || data.success)) {
+          return { prompt: data.prompt || "No descriptive text returned.", engine: 'Aryan' };
+        }
       }
     } catch (e) {
-      console.warn("Aryan Engine unreachable (likely Mixed Content blocked). Falling back to secure Neural Core...");
-      // If we are on HTTPS and trying to hit an HTTP endpoint, it usually fails.
-      // We don't throw yet, we try Gemini next.
+      console.warn("Aryan Engine offline or blocked by HTTPS policy. Attempting Gemini fallback...");
     }
   }
 
@@ -40,13 +41,13 @@ export const fetchPromptFromImage = async (
   
   if (!apiKey || apiKey.length < 5) {
     if (imageUrl.startsWith('data:')) {
-      throw new Error("AUTH_REQUIRED: Local file analysis requires a Tech Master Neural Engine key. Please connect your API project.");
+      throw new Error("AUTH_REQUIRED_LOCAL");
     } else {
-      throw new Error("AUTH_REQUIRED: Both engines failed to process this link. Please ensure your API key is set in the host environment.");
+      throw new Error("AUTH_REQUIRED_REMOTE");
     }
   }
 
-  // Use Gemini 3 Flash for fast, efficient visual reasoning
+  // Initialize SDK only when we have a valid key to avoid browser-level init errors
   const ai = new GoogleGenAI({ apiKey });
   const prompt = await callGeminiAI(ai, base64Data || imageUrl, mimeType);
   
@@ -58,7 +59,7 @@ export const fetchPromptFromImage = async (
  */
 async function callGeminiAI(ai: GoogleGenAI, dataOrUrl: string, mime?: string): Promise<string> {
   try {
-    const instruction = "You are a professional AI prompt engineer. Analyze this image in extreme detail. Generate a high-fidelity, descriptive art prompt optimized for Midjourney v6 and Stable Diffusion. Focus on: subject matter, lighting, camera settings, textures, mood, and art style. Provide ONLY the prompt text.";
+    const instruction = "You are an expert AI prompt engineer. Analyze this image thoroughly. Generate a high-fidelity art prompt for Midjourney v6. Describe colors, composition, lighting, style, and camera details. Output ONLY the prompt text.";
 
     const parts: any[] = [{ text: instruction }];
 
@@ -74,26 +75,27 @@ async function callGeminiAI(ai: GoogleGenAI, dataOrUrl: string, mime?: string): 
         },
       });
     } else if (dataOrUrl.startsWith('http')) {
-      parts[0].text += ` \n[Analyze this reference content: ${dataOrUrl}]`;
+      // For URLs, we use text prompting referencing the image
+      parts[0].text += ` \n[Analyze this reference image: ${dataOrUrl}]`;
     } else {
-      throw new Error("Invalid visual data stream.");
+      throw new Error("Invalid visual stream.");
     }
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview', 
       contents: [{ parts }],
       config: {
-        temperature: 0.8,
+        temperature: 0.9,
         topP: 0.95,
       }
     });
 
     const result = response.text;
-    if (!result) throw new Error("Vision analysis returned an empty result.");
+    if (!result) throw new Error("Null pointer returned from analysis.");
     
     return result.trim();
   } catch (err: any) {
-    console.error("Neural Processing Error:", err);
-    throw new Error(err.message || "The vision engine encountered a processing fault.");
+    console.error("Neural Analysis Error:", err);
+    throw new Error(err.message || "Visual analysis engine failure.");
   }
 }
