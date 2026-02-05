@@ -13,7 +13,10 @@ const App: React.FC = () => {
     return (saved as Theme) || 'dark';
   });
   
-  // Initialize from existing key if present
+  // Track if we are in a managed environment that supports API key selection
+  const isManagedEnv = typeof window !== 'undefined' && !!(window.aistudio && window.aistudio.openSelectKey);
+  
+  // Initial state for hasKey
   const [hasKey, setHasKey] = useState<boolean>(!!process.env.API_KEY);
   const [imageUrl, setImageUrl] = useState<string>('');
   const [base64Data, setBase64Data] = useState<string | undefined>();
@@ -34,16 +37,17 @@ const App: React.FC = () => {
         setHasKey(true);
         return;
       }
-      if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+      if (isManagedEnv) {
         const selected = await window.aistudio.hasSelectedApiKey();
         if (selected) setHasKey(true);
       }
     };
     checkKey();
-    // Interval to catch platform injection
+    
+    // Periodically check for key injection if we don't have one yet
     const int = setInterval(checkKey, 3000);
     return () => clearInterval(int);
-  }, []);
+  }, [isManagedEnv]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -57,9 +61,9 @@ const App: React.FC = () => {
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
   const handleSelectKey = async () => {
-    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+    if (isManagedEnv) {
       await window.aistudio.openSelectKey();
-      // Assume success per platform standard
+      // Assume success per platform standard to avoid race conditions
       setHasKey(true);
     }
   };
@@ -67,14 +71,6 @@ const App: React.FC = () => {
   const handleGenerate = async (url: string) => {
     if (!url && !base64Data) return;
     
-    // Safety check for Gemini specific calls
-    const isUrlCall = url.startsWith('http') && !url.startsWith('data:');
-    if (!process.env.API_KEY && !isUrlCall) {
-       setError("AUTHENTICATION FAILED: Vision analysis requires an active project key.");
-       setHasKey(false);
-       return;
-    }
-
     setIsLoading(true);
     setError(null);
     setGeneratedPrompt('');
@@ -97,10 +93,14 @@ const App: React.FC = () => {
       console.error("Critical Fault:", err);
       const msg = err.message || "";
       
-      // Handle the "entity not found" error to reset the key state as per instructions
       if (msg.includes("Requested entity was not found") || msg.includes("API key") || msg.includes("AUTH_REQUIRED")) {
-        setHasKey(false);
-        setError("API Session Expired: Please re-initialize the connection.");
+        // Only reset hasKey if we are in a managed env where selection is the solution
+        if (isManagedEnv) {
+          setHasKey(false);
+          setError("API Session Expired: Please re-initialize the connection.");
+        } else {
+          setError("GEMINI AUTH ERROR: Ensure process.env.API_KEY is set in your host environment.");
+        }
       } else {
         setError(msg || "The engine encountered an unexpected interruption.");
       }
@@ -125,8 +125,10 @@ const App: React.FC = () => {
     setError(null);
   };
 
-  // Setup screen for users without an API key
-  if (!hasKey && !process.env.API_KEY) {
+  // Only block the UI if we are in a managed environment and truly missing a key
+  const showSetupScreen = isManagedEnv && !hasKey && !process.env.API_KEY;
+
+  if (showSetupScreen) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#020617] p-6 relative overflow-hidden">
         <div className="glow-blob top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-30"></div>

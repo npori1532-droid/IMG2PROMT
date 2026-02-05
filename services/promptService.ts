@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 
 /**
  * Visual Intelligence Service
- * Optimized Hybrid Engine: Aryan API (Primary for URL) + Gemini (Vision fallback & Local)
+ * Hybrid Engine: Aryan API (Optimized for URL) + Gemini 3 Pro (Vision fallback & Local)
  */
 export const fetchPromptFromImage = async (
   imageUrl: string, 
@@ -10,26 +10,27 @@ export const fetchPromptFromImage = async (
   mimeType?: string
 ): Promise<{ prompt: string, engine: 'Aryan' | 'Gemini' }> => {
   
-  // Strategy 1: Aryan API (From snippet) - Only for remote URLs
-  // Note: Modern browsers block http calls from https sites (Mixed Content).
-  // We try this first but catch failure to fallback to secure Gemini.
+  // Strategy 1: Aryan API (From snippet)
+  // Only applicable for public remote URLs
   if (imageUrl && imageUrl.startsWith('http') && !imageUrl.startsWith('data:')) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      const timeoutId = setTimeout(() => controller.abort(), 12000); // Increased timeout for external API
 
-      const response = await fetch(`http://65.109.80.126:20409/aryan/promptv2?imageUrl=${encodeURIComponent(imageUrl)}`, {
+      const nix = "http://65.109.80.126:20409/aryan/promptv2";
+      const response = await fetch(`${nix}?imageUrl=${encodeURIComponent(imageUrl)}`, {
         signal: controller.signal
       });
       
       clearTimeout(timeoutId);
       const data = await response.json();
       
-      if (data && data.prompt) {
-        return { prompt: data.prompt, engine: 'Aryan' };
+      // Follow the logic in the snippet: check for .prompt or .success
+      if (data && (data.prompt || data.success)) {
+        return { prompt: data.prompt || "No prompt returned by Aryan Engine.", engine: 'Aryan' };
       }
     } catch (e) {
-      console.warn("Aryan API (HTTP) blocked or unreachable. Falling back to secure Neural Engine.");
+      console.warn("Aryan Engine offline or blocked by browser security. Falling back to Neural Core...");
     }
   }
 
@@ -37,10 +38,10 @@ export const fetchPromptFromImage = async (
   const apiKey = process.env.API_KEY;
   
   if (!apiKey || apiKey.length < 5) {
-    throw new Error("AUTH_REQUIRED: System authentication token is missing or invalid.");
+    throw new Error("AUTH_REQUIRED: System authentication token is missing. Please set process.env.API_KEY or use a managed bridge.");
   }
 
-  // Always create new instance as per instructions
+  // Use Gemini 3 Pro for visual reasoning as per guidelines for complex tasks
   const ai = new GoogleGenAI({ apiKey });
   const prompt = await callGeminiAI(ai, base64Data || imageUrl, mimeType);
   
@@ -48,11 +49,11 @@ export const fetchPromptFromImage = async (
 };
 
 /**
- * Gemini 3 Flash Vision Implementation
+ * Gemini 3 Pro Vision Implementation
  */
 async function callGeminiAI(ai: GoogleGenAI, dataOrUrl: string, mime?: string): Promise<string> {
   try {
-    const instruction = "You are a professional AI prompt engineer. Analyze this image in extreme detail. Generate a high-fidelity, descriptive art prompt optimized for Midjourney v6 and Stable Diffusion. Focus on: lighting, camera angle, textures, mood, and style. Provide ONLY the prompt text, no metadata.";
+    const instruction = "You are a professional AI prompt engineer. Analyze this image in extreme detail. Generate a high-fidelity, descriptive art prompt optimized for Midjourney v6 and Stable Diffusion. Focus on: subject matter, lighting, camera settings, textures, mood, and art style. Provide ONLY the prompt text.";
 
     const parts: any[] = [{ text: instruction }];
 
@@ -68,27 +69,27 @@ async function callGeminiAI(ai: GoogleGenAI, dataOrUrl: string, mime?: string): 
         },
       });
     } else if (dataOrUrl.startsWith('http')) {
-      // For URLs, we provide the link as context for the vision model
-      parts[0].text += ` \n[Reference Target: ${dataOrUrl}]`;
+      // For URLs, we provide the link as context
+      parts[0].text += ` \n[Reference Content: ${dataOrUrl}]`;
     } else {
-      throw new Error("Target data stream is corrupted or unrecognizable.");
+      throw new Error("Visual data stream is invalid.");
     }
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3-pro-preview', // Upgraded to Pro for better reasoning
       contents: [{ parts }],
       config: {
-        temperature: 0.85,
+        temperature: 0.8,
         topP: 0.95,
       }
     });
 
     const result = response.text;
-    if (!result) throw new Error("Vision analysis returned a null pointer.");
+    if (!result) throw new Error("Vision analysis returned an empty result.");
     
     return result.trim();
   } catch (err: any) {
     console.error("Neural Processing Error:", err);
-    throw new Error(err.message || "The vision engine encountered a critical processing fault.");
+    throw new Error(err.message || "The vision engine encountered a processing fault.");
   }
 }
