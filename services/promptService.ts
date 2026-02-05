@@ -2,39 +2,32 @@ import { GoogleGenAI } from "@google/genai";
 
 /**
  * Visual Intelligence Service
- * Optimized for secure HTTPS environments (Cloudflare/Vercel).
+ * Optimized for secure production environments.
  */
 export const fetchPromptFromImage = async (
   imageUrl: string, 
   base64Data?: string, 
   mimeType?: string
 ): Promise<string> => {
-  // We use Gemini directly because external HTTP APIs are blocked by browsers 
-  // on secure hosting providers (Mixed Content policy).
-  return callGeminiAI(base64Data || imageUrl, mimeType);
+  // Always initialize a fresh instance to capture the latest API Key
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  return callGeminiAI(ai, base64Data || imageUrl, mimeType);
 };
 
 /**
  * Gemini 3 Flash Vision Implementation
- * Faster and more reliable for multimodal tasks.
+ * Optimized for speed and complex descriptive analysis.
  */
-async function callGeminiAI(dataOrUrl: string, mime?: string): Promise<string> {
+async function callGeminiAI(ai: GoogleGenAI, dataOrUrl: string, mime?: string): Promise<string> {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
-    // Detailed system-level instruction for the prompt generator
-    const instruction = "You are a professional AI prompt engineer. Analyze this image and generate a highly detailed, descriptive art prompt suitable for Midjourney, Stable Diffusion, or DALL-E. Include details about lighting, camera angle, textures, art style, and mood. Provide ONLY the prompt text, no chat or meta-comments.";
+    const instruction = "Act as a world-class prompt engineer. Analyze the provided image in extreme detail. Generate a rich, descriptive prompt optimized for Midjourney v6 and DALL-E 3. Include information on subject, composition, lighting, camera settings, and textures. Output ONLY the prompt string.";
 
-    const parts: any[] = [];
-    
-    // Add text instruction
-    parts.push({ text: instruction });
+    const parts: any[] = [{ text: instruction }];
 
-    // Handle local image data (Base64)
+    // Prepare image payload
     if (dataOrUrl.startsWith('data:')) {
-      const splitData = dataOrUrl.split(',');
-      const base64Content = splitData[1];
-      const detectedMime = mime || splitData[0].split(':')[1].split(';')[0];
+      const base64Content = dataOrUrl.split(',')[1];
+      const detectedMime = mime || dataOrUrl.split(':')[1].split(';')[0];
       
       parts.push({
         inlineData: {
@@ -43,43 +36,51 @@ async function callGeminiAI(dataOrUrl: string, mime?: string): Promise<string> {
         },
       });
     } else if (dataOrUrl.startsWith('http')) {
-      // For remote URLs, we attempt to fetch and convert to base64 to ensure the model sees the content.
-      // If fetching fails due to CORS, we provide the URL in text as a fallback.
+      // For URLs, we attempt a fetch to provide raw bits to the model for better accuracy
       try {
         const response = await fetch(dataOrUrl);
         const blob = await response.blob();
-        const reader = new FileReader();
-        const base64Promise = new Promise<string>((resolve) => {
+        const base64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
           reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
           reader.readAsDataURL(blob);
         });
-        const base64Content = await base64Promise;
         
         parts.push({
           inlineData: {
-            data: base64Content,
+            data: base64,
             mimeType: blob.type || 'image/jpeg',
           },
         });
       } catch (err) {
-        console.warn("CORS issue fetching remote image, falling back to URL reference.");
-        parts[0].text += ` \n[Context: Analyze the image at this URL: ${dataOrUrl}]`;
+        // Fallback to text reference if fetch fails
+        parts[0].text += ` \n[Reference URL: ${dataOrUrl}]`;
       }
     } else {
-      throw new Error("Invalid image source provided.");
+      throw new Error("Invalid resource path.");
     }
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [{ parts }],
+      config: {
+        temperature: 0.8,
+        topP: 0.9,
+      }
     });
 
     const result = response.text;
-    if (!result) throw new Error("The AI returned an empty response. Try a different image.");
+    if (!result) throw new Error("Processing complete but analysis was inconclusive.");
     
     return result.trim();
   } catch (err: any) {
-    console.error("Gemini Critical Error:", err);
-    throw new Error(err.message || "The visual engine is currently reaching capacity. Please retry shortly.");
+    console.error("Gemini Vision Error:", err);
+    
+    // Pass through specific error messages for better user feedback
+    if (err.message?.includes('API key')) {
+      throw new Error("API Authentication Failure. Please verify your system credentials.");
+    }
+    
+    throw new Error(err.message || "Visual analysis engine timed out. Please try again.");
   }
 }

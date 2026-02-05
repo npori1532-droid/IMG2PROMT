@@ -13,6 +13,7 @@ const App: React.FC = () => {
     return (saved as Theme) || 'dark';
   });
   
+  const [hasKey, setHasKey] = useState<boolean>(true);
   const [imageUrl, setImageUrl] = useState<string>('');
   const [base64Data, setBase64Data] = useState<string | undefined>();
   const [mimeType, setMimeType] = useState<string | undefined>();
@@ -23,6 +24,17 @@ const App: React.FC = () => {
     const saved = localStorage.getItem('prompt_history');
     return saved ? JSON.parse(saved) : [];
   });
+
+  // Check for API Key on mount
+  useEffect(() => {
+    const checkKey = async () => {
+      if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+        const selected = await window.aistudio.hasSelectedApiKey();
+        setHasKey(selected);
+      }
+    };
+    checkKey();
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -35,6 +47,13 @@ const App: React.FC = () => {
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
+  const handleSelectKey = async () => {
+    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+      await window.aistudio.openSelectKey();
+      setHasKey(true); // Proceed assuming success per instructions
+    }
+  };
+
   const handleGenerate = async (url: string) => {
     if (!url && !base64Data) return;
     setIsLoading(true);
@@ -44,7 +63,7 @@ const App: React.FC = () => {
     try {
       const result = await fetchPromptFromImage(url, base64Data, mimeType);
       
-      if (!result) throw new Error("Visual signature could not be extracted.");
+      if (!result) throw new Error("Visual signal interpretation failed.");
       
       setGeneratedPrompt(result);
       
@@ -56,8 +75,14 @@ const App: React.FC = () => {
       };
       setHistory(prev => [newHistoryItem, ...prev]);
     } catch (err: any) {
-      console.error("App Analysis Error:", err);
-      setError(err.message || "Network Error: System unresponsive.");
+      console.error("Critical Engine Failure:", err);
+      // Reset key state if the error indicates a missing project/entity
+      if (err.message?.includes('entity was not found') || err.message?.includes('API key')) {
+        setHasKey(false);
+        setError("API Authentication Failed. Please re-initialize the engine.");
+      } else {
+        setError(err.message || "Network Error: System unresponsive. Please check your connection.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -77,6 +102,30 @@ const App: React.FC = () => {
     setMimeType(type);
     setError(null);
   };
+
+  if (!hasKey) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 p-6">
+        <div className="max-w-md w-full bg-slate-900 border border-white/10 p-12 rounded-[3rem] shadow-2xl text-center space-y-8 animate-in fade-in zoom-in duration-500">
+          <div className="w-24 h-24 bg-blue-600 rounded-3xl mx-auto flex items-center justify-center text-white text-4xl font-black shadow-2xl shadow-blue-500/20">TM</div>
+          <div className="space-y-4">
+            <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Initialize Engine</h2>
+            <p className="text-slate-400 font-medium">To access the <b>Tech Master Vision Engine</b>, you must connect a valid Gemini API project.</p>
+          </div>
+          <button 
+            onClick={handleSelectKey}
+            className="w-full py-5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-widest transition-all shadow-xl shadow-blue-600/20"
+          >
+            Connect API Key
+          </button>
+          <p className="text-[10px] text-slate-500 uppercase tracking-widest leading-loose">
+            Requires a paid GCP project.<br/>
+            <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-blue-500 underline">Documentation</a>
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col transition-all duration-700 perspective-2000">
@@ -107,7 +156,7 @@ const App: React.FC = () => {
             </span>
           </h1>
           <p className="text-slate-500 dark:text-slate-400 max-w-2xl mx-auto text-2xl font-bold mt-8 tracking-tight">
-            Advanced vision analysis. Powered by <span className="text-blue-500">Tech Master AI</span>.
+            High-fidelity visual analysis engine. Powered by <span className="text-blue-500">Tech Master AI</span>.
           </p>
         </header>
 
